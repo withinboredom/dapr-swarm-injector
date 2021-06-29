@@ -1,0 +1,15 @@
+version: '3'
+services:
+  dapr-monitor:
+    image: withinboredom/dapr-swarm-monitor:latest
+    build:
+      dockerfile: Dockerfile
+      context: .
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: none
+    deploy:
+      placement:
+        constraints:
+          - "node.role==manager"
+      replicas: 1

@@ -1,0 +1,26 @@
+{
+  "name": "withinboredom/dapr-swarm-injector",
+  "type": "project",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Rob Landers",
+      "email": "landers.robert@gmail.com"
+    }
+  ],
+  "require": {
+    "php-http/socket-client": "^2.1",
+    "guzzlehttp/psr7": "^1.8",
+    "php-http/message": "^1.11",
+    "php-http/client-common": "^2.3",
+    "ext-pcntl": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Dapr\\SwarmInjector\\": "src"
+    }
+  },
+  "bin": [
+    "src/monitor.php"
+  ]
+}
