@@ -7,6 +7,11 @@ use Dapr\SwarmInjector\Objects\Config;
 use GuzzleHttp\Psr7\Request;
 use Http\Client\Common\Exception\ServerErrorException;
 use Http\Client\Socket\Client;
+use Http\Client\Socket\Exception\InvalidRequestException;
+
+function makeObject( &$part ) {
+	$part = (object) $part;
+}
 
 /**
  * Class DockerClient
@@ -62,6 +67,34 @@ class DockerClient {
 		};
 	}
 
+	public function updateService( array $service, string $id, int $version ): bool {
+		//$id = $service['ID'];
+		//unset( $service['ID'] );
+		//$service['Version']['Index'] = $version;
+		makeObject( $service['TaskTemplate']['Resources'] );
+		makeObject( $service['TaskTemplate']['Placement'] );
+		makeObject( $service['Mode']['Global'] );
+		$body = json_encode( $service, JSON_UNESCAPED_SLASHES );
+		echo "Updating service $id with version $version\n";
+		$request  = new Request( 'POST', $this->createUri( "/services/$id/update", [ 'version' => $version ] ), headers: [ 'Content-Length' => strlen( $body ) ], body: $body );
+		$response = $this->client->sendRequest( $request );
+
+		$responseBody = $response->getBody()->getContents();
+
+		$parsedResponse = json_decode( $responseBody, true );
+		foreach ( $parsedResponse['Warnings'] ?? [] as $warning ) {
+			echo "Warning updating service: $warning\n";
+		}
+
+		return match ( $response->getStatusCode() ) {
+			503 => throw new NotInSwarmMode(),
+			500 => throw new ServerErrorException( $responseBody, $request, $response ),
+			404 => false,
+			400 => throw new InvalidRequestException( $responseBody, $request ),
+			200 => true,
+		};
+	}
+
 	private function parseResponse( string $response ): array {
 		$response = explode( "\r\n", $response );
 		foreach ( $response as $line ) {
@@ -74,7 +107,6 @@ class DockerClient {
 	}
 
 	public function getLastConfig( string $label ): Config {
-		var_dump( $this->createUri( '/configs', $this->getFilters( [ 'label' => [ $label ] ] ) ) );
 		$request      = new Request(
 			method: 'GET',
 			uri: $this->createUri( '/configs', $this->getFilters( [ 'label' => [ $label ] ] ) ),
@@ -112,7 +144,6 @@ class DockerClient {
 	}
 
 	public function getContainers( array $filters = [] ): array {
-		var_dump( $this->createUri( '/containers/json', $this->getFilters( $filters ) ) );
 		$request  = new Request( 'GET', $this->createUri( '/containers/json', $this->getFilters( $filters ) ) );
 		$response = $this->client->sendRequest( $request );
 

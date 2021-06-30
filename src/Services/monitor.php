@@ -25,7 +25,20 @@ foreach ( $services as $serviceDescription ) {
 	}
 }
 
-$injectorService = ( $dockerClient->getServices( 'swarm.inject' )[0] ?? [] )['ID'] ?? null;
+$injectorService = ( $dockerClient->getServices( 'swarm.inject' )[0] ?? [] ) ?? null;
+
+if ( $injectorService === null ) {
+	echo 'Injector service does not exist!\n';
+	exit( 1 );
+}
+
+if ( empty( $injectorService['Spec']['TaskTemplate']['ContainerSpec']['Configs'] ) || ! in_array( $config->id, array_map( fn( $conf ) => $conf['ConfigID'], $injectorService['Spec']['TaskTemplate']['ContainerSpec']['Configs'] ) ) ) {
+	updateInjectors( $config, $injectorService['ID'] );
+} else {
+	echo "Not updating injector because it is already using the latest config\n";
+}
+
+$injectorService = $injectorService['ID'];
 
 if ( $doUpdateConfig ) {
 	$config = $dockerClient->newConfig( $config, 'swarm.inject' );
@@ -39,11 +52,26 @@ if ( $doUpdateConfig ) {
  * @param string $injectorService
  */
 function updateInjectors( Config $config, string|null $injectorService ): void {
+	global $dockerClient;
 	if ( empty( $injectorService ) ) {
 		echo "Unable to update injector service with new configuration\nPlease deploy the stack to Docker Swarm.\n";
 		exit( 1 );
 	}
 	echo "Updating injectors with latest config: v{$config->version}\n";
+	$existingService = $dockerClient->getService( $injectorService );
+
+	$existingService['Spec']['TaskTemplate']['ContainerSpec']['Configs'] = [
+		[
+			'ConfigID'   => $config->id,
+			'ConfigName' => $config->getName(),
+			'File'       => [ 'Name' => '/' . $config->getName(), 'UID' => '0', 'GID' => '0', 'Mode' => 444 ]
+		]
+	];
+	if ( ! $dockerClient->updateService( $existingService['Spec'], $existingService['ID'], $existingService['Version']['Index'] ) ) {
+		echo "Failed to update injector!\n";
+
+		return;
+	}
 }
 
 function addServiceToConfig( Config $config, string $serviceId ): bool {
