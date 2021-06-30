@@ -2,34 +2,46 @@
 
 namespace Dapr\SwarmInjector;
 
-use Dapr\SwarmInjector\Lib\DockerClient;
-use Dapr\SwarmInjector\Lib\EventHandler;
-use Dapr\SwarmInjector\Lib\Options;
-use Http\Client\Socket\Client;
+require_once __DIR__ . '/startup.php';
 
-require_once __DIR__ . '/../vendor/autoload.php';
+global $alive;
+global $monitor_options;
+global $client;
+global $dockerClient;
+global $eventHandler;
 
-$alive = true;
-
-pcntl_signal( SIGINT, function () use ( &$alive ) {
-	$alive = false;
-} );
-
-$monitor_options = new Options();
-
-$client_options = [
-	'remote_socket' => $monitor_options->getRemote(),
-];
-
-if ( $tls = $monitor_options->getTLS() ) {
-	$client_options['ssl']                    = true;
-	$client_options['stream_context_options'] = [
-		'ssl' => [
-			'local_cert' => $tls
-		]
-	];
+$services = $monitor_options->getCurrentConfigFile();
+if ( ! file_exists( "/$services" ) ) {
+	echo "Unable to locate service db from swarm configuration\nWaiting for update\n";
+	while ( $alive ) {
+		sleep( 3360 );
+	}
 }
 
-$client       = new Client( $client_options );
-$dockerClient = new DockerClient( $client );
-$eventHandler = new EventHandler( $client_options );
+function injectContainer( string $image, string $containerId, array $labels, string $labelPrefix ): void {
+
+}
+
+$services = json_decode( file_get_contents( $services ) );
+
+$eventHandler->on( type: 'container', action: 'start', scope: 'local', do: function ( $event ) {
+	var_dump( $event );
+} );
+$eventHandler->on( type: 'container', action: 'stop', scope: 'local', do: function ( $event ) {
+	var_dump( $event );
+} );
+
+$eventHandler->start();
+
+$containers = $dockerClient->getContainers();
+foreach ( $containers as $container ) {
+	$foundService = ( $container['Labels'] ?? [] )['com.docker.swarm.service.id'] ?? null;
+	if ( $foundService === null ) {
+		continue;
+	}
+	injectContainer( $monitor_options->getInjectImageName(), $container['Id'], $services[ $foundService ], $monitor_options->getLabelPrefix() );
+}
+
+while ( $alive ) {
+	$eventHandler->update();
+}

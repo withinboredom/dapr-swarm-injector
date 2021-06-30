@@ -2,10 +2,6 @@ version: '3'
 services:
   swarm-monitor:
     image: withinboredom/dapr-swarm-monitor:latest
-    build:
-      dockerfile: Dockerfile
-      context: .
-      target: monitor
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: none
@@ -16,12 +12,10 @@ services:
       replicas: 1
   swarm-injector:
     image: withinboredom/dapr-swarm-injector:latest
-    build:
-      dockerfile: Dockerfile
-      context: .
-      target: injector
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: none
     deploy:
       mode: global
+      labels:
+        swarm.inject: "true"

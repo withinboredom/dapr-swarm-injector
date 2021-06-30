@@ -22,4 +22,4 @@ phar: monitor.phar injector.phar
 
 .PHONY: test
 test: build
-	docker run -it --name rob_test --rm -v /var/run/docker.sock:/var/run/docker.sock withinboredom/dapr-swarm-monitor:latest || true
+	docker-compose up || docker-compose down -v

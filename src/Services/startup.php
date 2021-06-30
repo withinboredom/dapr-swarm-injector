@@ -21,7 +21,7 @@ $client_options = [
 	'remote_socket' => $monitor_options->getRemote(),
 ];
 
-if ( $tls = $monitor_options->getTLS() ) {
+if ( ( $tls = $monitor_options->getTLS() ) !== 'false' ) {
 	$client_options['ssl']                    = true;
 	$client_options['stream_context_options'] = [
 		'ssl' => [
@@ -33,7 +33,6 @@ if ( $tls = $monitor_options->getTLS() ) {
 global $client;
 global $dockerClient;
 global $eventHandler;
-global $config;
 
 $client       = new Client( $client_options );
 $dockerClient = new DockerClient( $client );

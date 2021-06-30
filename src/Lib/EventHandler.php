@@ -47,14 +47,19 @@ class EventHandler extends Client {
 			if ( '' === rtrim( $line ) ) {
 				break;
 			}
+			$line = trim( $line );
 			if ( str_starts_with( $line, '{' ) ) {
-				var_dump( $line );
 				$event      = json_decode( $line, true );
 				$predicates = $this->getAllPredicates( $event['Type'] ?? false, $event['Action'] ?? false, $event['scope'] ?? false );
 				foreach ( $predicates as $predicate ) {
-					$predicate = implode( '|', $predicate );
+					$predicate   = implode( '|', $predicate );
+					$didcallback = false;
 					foreach ( $this->callbacks[ $predicate ] ?? [] as $callback ) {
 						$callback( $event );
+						$didcallback = true;
+					}
+					if ( $didcallback ) {
+						echo "Handled event:\n$line\n";
 					}
 				}
 			}

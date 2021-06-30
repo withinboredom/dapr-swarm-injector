@@ -22,6 +22,18 @@ class Options {
 	}
 
 	public function getTLS(): string {
-		return $this->getEnv( 'DOCKER_CERT', false );
+		return $this->getEnv( 'DOCKER_CERT', 'false' );
+	}
+
+	public function getCurrentConfigFile(): string {
+		return $this->getEnv( 'CONFIG_NAME', 'no-config' );
+	}
+
+	public function getInjectImageName(): string {
+		return $this->getEnv( 'INJECT_IMAGE', 'dapr/daprd:v1.2.2' );
+	}
+
+	public function getLabelPrefix(): string {
+		return $this->getEnv( 'LABEL_PREFIX', 'dapr.io' );
 	}
 }
