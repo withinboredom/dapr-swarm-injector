@@ -21,6 +21,7 @@
     }
   },
   "bin": [
-    "src/monitor.php"
+    "src/Services/monitor.php",
+    "src/Services/injector.php"
   ]
 }

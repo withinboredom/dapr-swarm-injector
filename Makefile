@@ -12,8 +12,13 @@ tools/box:
 	phive install humbug/box --force-accept-unsigned
 
 monitor.phar: tools/box vendor/autoload.php
-	tools/box compile
-	mv src/monitor.phar .
+	tools/box compile -c monitor.box.json
+
+injector.phar: tools/box vendor/autoload.php
+	tools/box compile -c injector.box.json
+
+.PHONY: phar
+phar: monitor.phar injector.phar
 
 .PHONY: test
 test: build

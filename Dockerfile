@@ -16,11 +16,16 @@ WORKDIR /app
 COPY composer.json composer.json
 COPY composer.lock composer.lock
 RUN composer install
-COPY Makefile Makefile
-COPY src src
-RUN make monitor.phar
+COPY . .
+RUN make -j phar
 
-FROM base AS monitor
+FROM base AS runtime
 RUN install-php-extensions curl zip sodium pcntl
+
+FROM runtime AS monitor
 COPY --from=monitor-build /app/monitor.phar /monitor.phar
 ENTRYPOINT ["/monitor.phar"]
+
+FROM runtime AS injector
+COPY --from=monitor-build /app/injector.phar /injector.phar
+ENTRYPOINT ["/injector.phar"]
