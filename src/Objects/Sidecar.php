@@ -149,7 +149,7 @@ class Sidecar {
 				'api-token-secret'       => [ 'required' => false, 'type' => 'secret' ],
 				'app-token-secret'       => [ 'required' => false, 'type' => 'secret' ],
 				'log-as-json'            => [
-					'required' => 'false',
+					'required' => false,
 					'type'     => 'param',
 					'is_bool'  => true,
 					'default'  => 'false'

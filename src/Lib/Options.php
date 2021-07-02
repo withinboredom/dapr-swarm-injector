@@ -30,7 +30,7 @@ class Options {
 	}
 
 	public function getInjectImageName(): string {
-		return $this->getEnv( 'INJECT_IMAGE', 'daprio/daprd:1.2.2' );
+		return $this->getEnv( 'INJECT_IMAGE', 'daprio/daprd:edge' );
 	}
 
 	public function getLabelPrefix(): string {
