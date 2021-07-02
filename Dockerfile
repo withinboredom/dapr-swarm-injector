@@ -1,4 +1,4 @@
-FROM php:8-cli AS base
+FROM --platform=$BUILDPLATFORM php:8-cli AS base
 RUN apt-get update && apt-get install -y wget gpg git unzip && apt-get clean && rm -rf /var/cache/apt/lists
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 

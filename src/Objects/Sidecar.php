@@ -27,8 +27,6 @@ class Sidecar {
 
 		$current = $this->container->container;
 
-		var_dump( $request, implode( ' ', $request['Cmd'] ), $current['Command'] );
-
 		return ! ( $request['Image'] === $current['Image']
 		           && ( $request['Env'] ?? [] ) === ( $current['Env'] ?? [] )
 		           && implode( ' ', $request['Cmd'] ) === $current['Command'] );

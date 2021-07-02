@@ -12,7 +12,7 @@ use Http\Client\Socket\Client;
 use Http\Client\Socket\Exception\InvalidRequestException;
 
 function makeObject( &$part ) {
-	$part = empty( $part ) ? (object) $part : $part;
+	$part = (object) $part;
 }
 
 /**
@@ -77,7 +77,6 @@ class DockerClient {
 
 	public function updateService( Service $serviceToUpdate ): bool {
 		$body = $serviceToUpdate->getJson();
-		var_dump($body);
 		echo "Updating service {$serviceToUpdate->id} with version {$serviceToUpdate->version}\n";
 		$request  = new Request( 'POST', $this->createUri( "/services/{$serviceToUpdate->id}/update", [ 'version' => $serviceToUpdate->version ] ), headers: [ 'Content-Length' => strlen( $body ) ], body: $body );
 		$response = $this->client->sendRequest( $request );

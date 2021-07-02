@@ -65,6 +65,9 @@ class Service {
 		makeObject( $this->service['TaskTemplate']['Resources'] );
 		makeObject( $this->service['TaskTemplate']['Placement'] );
 		makeObject( $this->service['Mode']['Global'] );
+		makeObject( $this->service['TaskTemplate']['ContainerSpec']['DNSConfig'] );
+		makeObject( $this->service['TaskTemplate']['Resources']['Limits'] );
+		makeObject( $this->service['TaskTemplate']['Resources']['Reservations'] );
 
 		return json_encode( $this->service, JSON_UNESCAPED_SLASHES );
 	}
