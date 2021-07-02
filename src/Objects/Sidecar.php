@@ -44,7 +44,7 @@ class Sidecar {
 		$getAllOfType = fn( string $type ) => array_filter( $labelMap, fn( $config ) => $config['type'] === $type );
 		$render       = fn( $config ) => $this->renderValues( $config, $labels, $container );
 
-		return [
+		$container = [
 			'Image'      => $monitor_options->getInjectImageName(),
 			'Env'        => array_filter( $render( $getAllOfType( 'env' ) ) ),
 			'Cmd'        => array_merge( [ $monitor_options->getCommandPrefix() ], array_merge( ...array_filter( $render( $getAllOfType( 'param' ) ), fn( $c ) => ! empty( $c[1] ) ) ) ),
@@ -55,12 +55,22 @@ class Sidecar {
 				'CpuQuota'          => (int) $render( $getAllOfType( 'CPU.Limit' ) )[0] ?? 0,
 				'MemoryReservation' => (int) $render( $getAllOfType( 'Memory.Request' ) )[0] ?? 0,
 				'RestartPolicy'     => [ 'Name' => $render( $getAllOfType( 'RestartPolicy' ) )[0][1] ?? 'always' ],
-				'NetworkMode'       => 'container:' . $container->container->getId()
+				'NetworkMode'       => 'container:' . $container->container->getId(),
 			],
 			'Labels'     => [
 				'swarm.injector/type' => 'sidecar:' . $monitor_options->getLabelPrefix(),
 			],
 		];
+
+		if ( $monitor_options->getComponentImage() ) {
+			$volumeName                       = sha1( $monitor_options->getComponentImage() );
+			$mountPoint                       = $monitor_options->getComponentPath();
+			$container['HostConfig']['Binds'] = [
+				"$volumeName:$mountPoint:ro,nocopy"
+			];
+		}
+
+		return $container;
 	}
 
 	private function renderValues( array $configs, array $labels, TrackedContainer $container ): mixed {
@@ -68,6 +78,9 @@ class Sidecar {
 		$values = [];
 		foreach ( $configs as $config ) {
 			if ( $config['kind'] === 'constant' ) {
+				if ( str_starts_with( $config['value'], 'ENV:' ) ) {
+					$config['value'] = $monitor_options->getEnv( explode( ':', 2 )[1], $config['default'] ?? null );
+				}
 				$values[] = [ $config['as'], $config['value'] ];
 			}
 			if ( $config['kind'] === 'label' ) {
@@ -175,7 +188,12 @@ class Sidecar {
 				'dapr-grpc-port'          => [ 'type' => 'param', 'value' => '50001' ],
 				'dapr-internal-grpc-port' => [ 'type' => 'param', 'value' => '50002' ],
 				'placement-host-address'  => [ 'type' => 'param', 'value' => 'placement:50005' ],
-				'restart'                 => [ 'type' => 'RestartPolicy', 'value' => 'unless-stopped' ]
+				'restart'                 => [ 'type' => 'RestartPolicy', 'value' => 'unless-stopped' ],
+				'components-path'         => [
+					'type'    => 'param',
+					'value'   => 'ENV:COMPONENTS_PATH',
+					'default' => '/components'
+				]
 			]
 		];
 	}

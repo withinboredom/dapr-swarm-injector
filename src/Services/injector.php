@@ -12,21 +12,46 @@ global $dockerClient;
 global $eventHandler;
 
 echo "Waiting for environment configuration\n";
-$serviceLabels = [];
 while ( $alive ) {
 	sleep( 1 );
 	if ( ! empty( $monitor_options->getCurrentConfigFile() ) ) {
 		\Phar::mount( '/' . $monitor_options->getCurrentConfigFile(), '/' . $monitor_options->getCurrentConfigFile() );
-		$serviceLabels = json_decode( file_get_contents( '/' . $monitor_options->getCurrentConfigFile() ), true );
 		echo "Now using config: {$monitor_options->getCurrentConfigFile()}\n";
 		break;
+	}
+}
+
+// check to see if we have a component image
+$componentImage = $monitor_options->getComponentImage();
+$mountPoint     = $monitor_options->getComponentPath();
+if ( $componentImage !== null ) {
+	// check to see if a volume already exists for it
+	$volumeName = sha1( $componentImage );
+	if ( ! $dockerClient->volumeExists( $volumeName ) ) {
+		// create the volume and fill with data
+		if ( $dockerClient->createVolume( $volumeName, [
+			'from-image'   => $componentImage,
+			'swarm.inject' => 'true'
+		] ) ) {
+			echo "Created new volume $volumeName for $componentImage\n";
+			$containerId = $dockerClient->createContainer( [
+				'Image'      => $componentImage,
+				'HostConfig' => [
+					'Binds' => [
+						"$volumeName:$mountPoint:rw"
+					]
+				]
+			], $volumeName );
+			$dockerClient->removeContainer( $containerId, false );
+			echo "Initialized volume $volumeName with component images from $mountPoint\n";
+		}
 	}
 }
 
 function doit() {
 	global $dockerClient, $serviceLabels;
 	$containers = $dockerClient->getContainers();
-	$map        = new SidecarMap( $containers, $serviceLabels['services'] );
+	$map        = new SidecarMap( $containers, $serviceLabels['services'] ?? [] );
 	$map->reconcileSidecars( $dockerClient );
 }
 

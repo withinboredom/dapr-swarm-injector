@@ -36,7 +36,7 @@ docker service create \
     --mode global \
     --label swarm.inject=true \
     --name swarm-injector \
-    withinboredom/dapr-swarm-injector:v0.2.0
+    docker.io/withinboredom/dapr-swarm-injector:v0.2.0-4392f13
 ```
 
 ## The Monitor
@@ -53,19 +53,67 @@ docker service create \
     --replicas 1 \
     --env INJECT_IMAGE=daprio/daprd:1.2.2 \
     --name swarm-monitor \
-    withinboredom/dapr-swarm-monitor:v0.2.0
+    docker.io/withinboredom/dapr-swarm-monitor:v0.2.0-4392f13
 ```
 
 ### Environment Variables
 
-- DOCKER_HOST: (default: `unix:///var/run/docker.sock`) How to communicate to the Docker host
-- DOCKER_CERT: (default: `false`) Certificate for secure communications to Docker (can be a secret)
-- INJECT_IMAGE: (default: `daprio/daprd:edge`) The sidecar image to inject
-- LABEL_PREFIX: (default: `dapr.io`) Label prefixes to read
-- COMMAND_PREFIX: (default: `./daprd`) Prefix all commands with this when starting the sidecar
-- INJECTOR_IMAGE: (default: `withinboredom/dapr-swarm-injector:[current-version]`) The injector image
-- ALWAYS_UPDATE: (default: `false`) Always update the injector service on startup -- for development of the injector
-- LABEL_MAP_CONFIG: (default: nothing) Advanced usage that changes the behavior of the injector (see next section)
+- `DOCKER_HOST`: (default: `unix:///var/run/docker.sock`) How to communicate to the Docker host
+- `DOCKER_CERT`: (default: `false`) Certificate for secure communications to Docker (can be a secret)
+- `INJECT_IMAGE`: (default: `daprio/daprd:edge`) The sidecar image to inject
+- `LABEL_PREFIX`: (default: `dapr.io`) Label prefixes to read
+- `COMMAND_PREFIX`: (default: `./daprd`) Prefix all commands with this when starting the sidecar
+- `INJECTOR_IMAGE`: (default: `withinboredom/dapr-swarm-injector:[current-version]`) The injector image
+- `ALWAYS_UPDATE`: (default: `false`) Always update the injector service on startup -- for development of the injector
+- `LABEL_MAP_CONFIG`: (default: nothing) Advanced usage that changes the behavior of the injector (see advanced section)
+- `COMPONENT_IMAGE`: (default: none) Image to use to extract components to Dapr
+- `COMPONENT_PATH`: (default: /components) Path to mount the components at in the daprd image
+
+# Tutorial
+
+## Deploy the injector
+
+First we need to deploy the injector:
+
+```
+docker service create \
+    --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
+    --mode global \
+    --label swarm.inject=true \
+    --name swarm-injector \
+    docker.io/withinboredom/dapr-swarm-injector:v0.3.0
+```
+
+From there, we can constrain it so it doesn't take too much memory/cpu:
+
+```
+docker service update swarm-injector --limit-cpu 0.1 --limit-memory 128M
+```
+
+## Deploy the Monitor
+
+```
+docker service create \
+    --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
+    --mode replicated \
+    --constraint "node.role==manager" \
+    --replicas 1 \
+    --env INJECT_IMAGE=daprio/daprd:1.2.2 \
+    --name swarm-monitor \
+    docker.io/withinboredom/dapr-swarm-monitor:v0.2.0-4392f13
+```
+
+We can also contrain the CPU and memory:
+
+```
+docker service update swarm-monitor --limit-cpu 0.1 --limit-memory 128M
+```
+
+## Adding components
+
+Now lets build a simple component (note that components do not support secrets at the moment):
+
+Create a network to use: `docker network create --internal dapr`
 
 ## Advanced: Changing Injector Behavior
 
@@ -185,6 +233,11 @@ Here's the default configuration:
     "restart": {
       "type": "RestartPolicy",
       "value": "unless-stopped"
+    },
+    "components-path": {
+      "type": "param",
+      "value": "ENV:COMPONENTS_PATH",
+      "default": "/components"
     }
   }
 }

@@ -32,5 +32,5 @@ test: build
 	docker service update test_swarm-monitor --force
 
 publish:
-	docker build --platform linux/x64,linux/arm64,linux/amd64,darwin/universal --target monitor --tag withinboredom/dapr-swarm-monitor:latest --push .
-	docker build --platform linux/x64,linux/arm64,linux/amd64,darwin/universal --target injector --tag withinboredom/dapr-swarm-injector:latest --push .
+	docker build --platform linux/x64,linux/arm64,linux/amd64,darwin/universal --target monitor --tag withinboredom/dapr-swarm-monitor:dev --push .
+	docker build --platform linux/x64,linux/arm64,linux/amd64,darwin/universal --target injector --tag withinboredom/dapr-swarm-injector:dev --push .

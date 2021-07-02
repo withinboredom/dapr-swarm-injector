@@ -50,6 +50,14 @@ class Options {
 	}
 
 	public function getAlwaysUpdateInjector(): bool {
-		return $this->getEnv('ALWAYS_UPDATE', 'false') === 'true';
+		return $this->getEnv( 'ALWAYS_UPDATE', 'false' ) === 'true';
+	}
+
+	public function getComponentImage(): string|null {
+		return $this->getEnv( 'COMPONENT_IMAGE', null );
+	}
+
+	public function getComponentPath(): string|null {
+		return $this->getEnv( 'COMPONENT_PATH', '/components' );
 	}
 }

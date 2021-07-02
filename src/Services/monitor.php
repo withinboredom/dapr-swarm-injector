@@ -14,8 +14,11 @@ global $monitor_options;
 // start listening to new events before we process our initial service list
 $eventHandler->start();
 
+// get all services with the prefix/enabled label
 $services = $dockerClient->getServices( $monitor_options->getLabelPrefix() . '/enabled' );
-$config   = $dockerClient->getLastConfig( 'swarm.inject' );
+
+// get the latest config with the label `swarm.inject`
+$config = $dockerClient->getLastConfig( 'swarm.inject' );
 
 if ( empty( $config->id ) ) {
 	$config = $dockerClient->newConfig( $config, 'swarm.inject' );
@@ -73,6 +76,8 @@ function updateInjectors( Config $config, Service|null $injectorService, bool $f
 	$existingService->updateEnvironment( 'LABEL_PREFIX', $monitor_options->getLabelPrefix() );
 	$existingService->updateEnvironment( 'CONFIG_NAME', $config->getName() );
 	$existingService->updateEnvironment( 'COMMAND_PREFIX', $monitor_options->getCommandPrefix() );
+	$existingService->updateEnvironment( 'COMPONENT_IMAGE', $monitor_options->getComponentImage() );
+	$existingService->updateEnvironment( 'COMPONENT_PATH', $monitor_options->getComponentPath() );
 	$existingService->updateImage( $monitor_options->getInjectorImage() );
 
 	if ( $force ) {

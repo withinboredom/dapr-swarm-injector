@@ -12,7 +12,11 @@ use Http\Client\Socket\Client;
 use Http\Client\Socket\Exception\InvalidRequestException;
 
 function makeObject( &$part ) {
-	$part = (object) $part;
+	if ( empty( $part ) ) {
+		return (object) $part;
+	}
+
+	return $part;
 }
 
 /**
@@ -222,6 +226,35 @@ class DockerClient {
 			404 => throw new \InvalidArgumentException( $body ),
 			304 => false,
 			204 => true,
+		};
+	}
+
+	public function createVolume( string $name, array $labels ): bool {
+		$body         = json_encode( [
+			'Name'   => $name,
+			'Labels' => $labels,
+		], JSON_UNESCAPED_SLASHES );
+		$request      = new Request( 'POST', $this->createUri( '/volumes/create' ), headers: [
+			'Content-Type'   => 'application/json',
+			'Content-Length' => strlen( $body )
+		], body: $body );
+		$response     = $this->client->sendRequest( $request );
+		$responseBody = $response->getBody()->getContents();
+
+		return match ( $response->getStatusCode() ) {
+			500 => throw new ServerErrorException( $responseBody, $request, $response ),
+			201 => true,
+			default => false,
+		};
+	}
+
+	public function volumeExists( string $name ): bool {
+		$request  = new Request( 'GET', $this->createUri( "/volumes/$name" ) );
+		$response = $this->client->sendRequest( $request );
+
+		return match ( $response->getStatusCode() ) {
+			200 => true,
+			default => false,
 		};
 	}
 }
