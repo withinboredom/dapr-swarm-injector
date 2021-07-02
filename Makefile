@@ -1,7 +1,6 @@
 .PHONY: build
 build: docker-compose.dist.yml docker-stack.dist.yml
-	docker build --target injector .
-	docker build --target monitor .
+	docker-compose -f docker-compose.dist.yml build
 
 composer.lock: composer.json
 	composer update
