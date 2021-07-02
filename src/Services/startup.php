@@ -11,6 +11,11 @@ echo "Version: @git@ built at @datetime@\n";
 require_once __DIR__ . '/../../vendor/autoload.php';
 $alive = true;
 
+set_exception_handler( function ( Throwable $exception ) {
+	echo "Uncaught exception: " . $exception->getMessage() . ": " . get_class( $exception ) . "\n";
+	echo $exception->getTraceAsString();
+} );
+
 pcntl_signal( SIGINT, function () use ( &$alive ) {
 	$alive = false;
 } );

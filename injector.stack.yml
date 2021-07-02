@@ -1,0 +1,11 @@
+version: '3'
+services:
+  swarm-injector:
+    image: withinboredom/dapr-swarm-injector:@git@
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: none
+    deploy:
+      mode: global
+      labels:
+        swarm.inject: "true"

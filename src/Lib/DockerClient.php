@@ -4,13 +4,15 @@ namespace Dapr\SwarmInjector\Lib;
 
 use Dapr\SwarmInjector\Exceptions\NotInSwarmMode;
 use Dapr\SwarmInjector\Objects\Config;
+use Dapr\SwarmInjector\Objects\Container;
+use Dapr\SwarmInjector\Objects\Service;
 use GuzzleHttp\Psr7\Request;
 use Http\Client\Common\Exception\ServerErrorException;
 use Http\Client\Socket\Client;
 use Http\Client\Socket\Exception\InvalidRequestException;
 
 function makeObject( &$part ) {
-	$part = (object) $part;
+	$part = empty( $part ) ? (object) $part : $part;
 }
 
 /**
@@ -38,6 +40,12 @@ class DockerClient {
 		];
 	}
 
+	/**
+	 * @param string $label
+	 *
+	 * @return Service[]
+	 * @throws \Psr\Http\Client\ClientExceptionInterface
+	 */
 	public function getServices( string $label ): array {
 		$request  = new Request(
 			method: 'GET',
@@ -48,11 +56,11 @@ class DockerClient {
 		return match ( $response->getStatusCode() ) {
 			503 => throw new NotInSwarmMode(),
 			500 => throw new ServerErrorException( $response->getBody()->getContents(), $request, $response ),
-			200 => $this->parseResponse( $response->getBody()->getContents() )
+			200 => array_map( fn( $service ) => new Service( $service ), $this->parseResponse( $response->getBody()->getContents() ) )
 		};
 	}
 
-	public function getService( string $id ): array {
+	public function getService( string $id ): Service {
 		if ( empty( $id ) ) {
 			throw new \LogicException( 'Tried to get details for an empty service' );
 		}
@@ -63,20 +71,15 @@ class DockerClient {
 			503 => throw new NotInSwarmMode(),
 			500 => throw new ServerErrorException( $response->getBody()->getContents(), $request, $response ),
 			404 => [],
-			200 => $this->parseResponse( $response->getBody()->getContents() )
+			200 => new Service( $this->parseResponse( $response->getBody()->getContents() ) )
 		};
 	}
 
-	public function updateService( array $service, string $id, int $version ): bool {
-		//$id = $service['ID'];
-		//unset( $service['ID'] );
-		//$service['Version']['Index'] = $version;
-		makeObject( $service['TaskTemplate']['Resources'] );
-		makeObject( $service['TaskTemplate']['Placement'] );
-		makeObject( $service['Mode']['Global'] );
-		$body = json_encode( $service, JSON_UNESCAPED_SLASHES );
-		echo "Updating service $id with version $version\n";
-		$request  = new Request( 'POST', $this->createUri( "/services/$id/update", [ 'version' => $version ] ), headers: [ 'Content-Length' => strlen( $body ) ], body: $body );
+	public function updateService( Service $serviceToUpdate ): bool {
+		$body = $serviceToUpdate->getJson();
+		var_dump($body);
+		echo "Updating service {$serviceToUpdate->id} with version {$serviceToUpdate->version}\n";
+		$request  = new Request( 'POST', $this->createUri( "/services/{$serviceToUpdate->id}/update", [ 'version' => $serviceToUpdate->version ] ), headers: [ 'Content-Length' => strlen( $body ) ], body: $body );
 		$response = $this->client->sendRequest( $request );
 
 		$responseBody = $response->getBody()->getContents();
@@ -143,6 +146,12 @@ class DockerClient {
 		};
 	}
 
+	/**
+	 * @param array $filters
+	 *
+	 * @return Container[]
+	 * @throws \Psr\Http\Client\ClientExceptionInterface
+	 */
 	public function getContainers( array $filters = [] ): array {
 		$request  = new Request( 'GET', $this->createUri( '/containers/json', $this->getFilters( $filters ) ) );
 		$response = $this->client->sendRequest( $request );
@@ -150,7 +159,70 @@ class DockerClient {
 		return match ( $response->getStatusCode() ) {
 			500 => throw new ServerErrorException( $response->getBody()->getContents(), $request, $response ),
 			400 => [],
-			200 => $this->parseResponse( $response->getBody()->getContents() )
+			200 => array_map( fn( $c ) => new Container( $c ), $this->parseResponse( $response->getBody()->getContents() ) )
+		};
+	}
+
+	public function createContainer( array $container, string $name ): string {
+		$body         = json_encode( $container, JSON_UNESCAPED_SLASHES );
+		$request      = new Request( 'POST', $this->createUri( '/containers/create', [ 'name' => $name ] ), headers: [
+			'Content-Type'   => 'application/json',
+			'Content-Length' => strlen( $body )
+		], body: $body );
+		$response     = $this->client->sendRequest( $request );
+		$responseBody = $response->getBody()->getContents();
+
+		return match ( $response->getStatusCode() ) {
+			500 => throw new ServerErrorException( $response->getBody()->getContents(), $request, $response ),
+			409 => throw new \InvalidArgumentException( $response->getBody()->getContents() ),
+			404 => throw new \RuntimeException( $response->getBody()->getContents() ),
+			400 => throw new \InvalidArgumentException( $response->getBody()->getContents() ),
+			201 => json_decode( $responseBody, true )['Id']
+		};
+	}
+
+	public function startContainer( string $id ): bool {
+		$request  = new Request( 'POST', $this->createUri( "/containers/$id/start" ) );
+		$response = $this->client->sendRequest( $request );
+
+		$body = $response->getBody()->getContents();
+
+		return match ( $response->getStatusCode() ) {
+			500 => throw new ServerErrorException( $body, $request, $response ),
+			404 => throw new \InvalidArgumentException( $body ),
+			304 => false,
+			204 => true,
+		};
+	}
+
+	public function stopContainer( string $id ): bool {
+		$request  = new Request( 'POST', $this->createUri( "/containers/$id/stop" ) );
+		$response = $this->client->sendRequest( $request );
+
+		$body = $response->getBody()->getContents();
+
+		return match ( $response->getStatusCode() ) {
+			500 => throw new ServerErrorException( $body, $request, $response ),
+			404 => throw new \InvalidArgumentException( $body ),
+			304 => false,
+			204 => true,
+		};
+	}
+
+	public function removeContainer( string $id, bool $volumes = false, bool $force = false ): bool {
+		$request  = new Request( 'DELETE', $this->createUri( "/containers/$id", [
+			'v'     => $volumes ? 'true' : 'false',
+			'force' => $force ? 'true' : 'false'
+		] ) );
+		$response = $this->client->sendRequest( $request );
+
+		$body = $response->getBody()->getContents();
+
+		return match ( $response->getStatusCode() ) {
+			500 => throw new ServerErrorException( $body, $request, $response ),
+			404 => throw new \InvalidArgumentException( $body ),
+			304 => false,
+			204 => true,
 		};
 	}
 }

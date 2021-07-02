@@ -3,6 +3,7 @@
 namespace Dapr\SwarmInjector;
 
 use Dapr\SwarmInjector\Objects\Config;
+use Dapr\SwarmInjector\Objects\Service;
 
 require_once __DIR__ . '/startup.php';
 
@@ -16,9 +17,13 @@ $eventHandler->start();
 $services = $dockerClient->getServices( $monitor_options->getLabelPrefix() . '/enabled' );
 $config   = $dockerClient->getLastConfig( 'swarm.inject' );
 
+if ( empty( $config->id ) ) {
+	$config = $dockerClient->newConfig( $config, 'swarm.inject' );
+}
+
 $doUpdateConfig = false;
 foreach ( $services as $serviceDescription ) {
-	$id = $serviceDescription['ID'];
+	$id = $serviceDescription->id;
 	echo "Detected $id as service\n";
 	if ( addServiceToConfig( $config, $id ) ) {
 		$doUpdateConfig = true;
@@ -32,17 +37,20 @@ if ( $injectorService === null ) {
 	exit( 1 );
 }
 
-if ( empty( $injectorService['Spec']['TaskTemplate']['ContainerSpec']['Configs'] ) || ! in_array( $config->id, array_map( fn( $conf ) => $conf['ConfigID'], $injectorService['Spec']['TaskTemplate']['ContainerSpec']['Configs'] ) ) ) {
-	updateInjectors( $config, $injectorService['ID'] );
+if ( ! $injectorService->hasConfig( $config ) ) {
+	updateInjectors( $config, $injectorService );
 } else {
 	echo "Not updating injector because it is already using the latest config\n";
 }
 
-$injectorService = $injectorService['ID'];
-
 if ( $doUpdateConfig ) {
 	$config = $dockerClient->newConfig( $config, 'swarm.inject' );
 	updateInjectors( $config, $injectorService );
+} else if ( $monitor_options->getInjectorImage() !== $injectorService->getImage() ) {
+	updateInjectors( $config, $injectorService );
+} else if ( $monitor_options->getAlwaysUpdateInjector() ) {
+	echo "Force updating injector!\n";
+	updateInjectors( $config, $injectorService, force: true );
 }
 
 /**
@@ -51,26 +59,32 @@ if ( $doUpdateConfig ) {
  * @param Config $config
  * @param string $injectorService
  */
-function updateInjectors( Config $config, string|null $injectorService ): void {
-	global $dockerClient;
+function updateInjectors( Config $config, Service|null $injectorService, bool $force = false ): void {
+	global $dockerClient, $monitor_options;
 	if ( empty( $injectorService ) ) {
 		echo "Unable to update injector service with new configuration\nPlease deploy the stack to Docker Swarm.\n";
 		exit( 1 );
 	}
 	echo "Updating injectors with latest config: v{$config->version}\n";
-	$existingService = $dockerClient->getService( $injectorService );
+	$existingService = $dockerClient->getService( $injectorService->id );
 
-	$existingService['Spec']['TaskTemplate']['ContainerSpec']['Configs'] = [
-		[
-			'ConfigID'   => $config->id,
-			'ConfigName' => $config->getName(),
-			'File'       => [ 'Name' => '/' . $config->getName(), 'UID' => '0', 'GID' => '0', 'Mode' => 444 ]
-		]
-	];
-	if ( ! $dockerClient->updateService( $existingService['Spec'], $existingService['ID'], $existingService['Version']['Index'] ) ) {
+	$existingService->setConfig( $config );
+	$existingService->updateEnvironment( 'INJECT_IMAGE', $monitor_options->getInjectImageName() );
+	$existingService->updateEnvironment( 'LABEL_PREFIX', $monitor_options->getLabelPrefix() );
+	$existingService->updateEnvironment( 'CONFIG_NAME', $config->getName() );
+	$existingService->updateEnvironment( 'COMMAND_PREFIX', $monitor_options->getCommandPrefix() );
+	$existingService->updateImage( $monitor_options->getInjectorImage() );
+
+	if ( $force ) {
+		$existingService->service['TaskTemplate']['ForceUpdate'] ++;
+	}
+
+	if ( $monitor_options->getLabelMapConfig() ) {
+		$existingService->updateEnvironment( 'LABEL_MAP_CONFIG', $monitor_options->getLabelMapConfig() );
+	}
+
+	if ( ! $dockerClient->updateService( $existingService ) ) {
 		echo "Failed to update injector!\n";
-
-		return;
 	}
 }
 
@@ -80,8 +94,8 @@ function addServiceToConfig( Config $config, string $serviceId ): bool {
 	if ( empty( $service ) ) {
 		echo "Skipping $serviceId because it appears to have gone missing\n";
 	}
-	$id     = $service['ID'];
-	$labels = $service['Spec']['Labels'];
+	$id     = $service->id;
+	$labels = $service->service['Labels'];
 
 	$isDifferent         = ( $config->services[ $id ] ?? [] ) !== $labels;
 	$isNowEnabled        = $labels[ $monitor_options->getLabelPrefix() . '/enabled' ] ?? 'false' === 'true';
@@ -89,11 +103,11 @@ function addServiceToConfig( Config $config, string $serviceId ): bool {
 
 	$reason = $isDifferent ? 'updated config' : ( $isNowEnabled ? 'enabled' : ( $isPreviouslyEnabled ? 'prev-enabled' : 'not-enabled' ) );
 
-	if ( ! $isNowEnabled ) {
+	echo "Reason for $serviceId being tracked: $reason\n";
+
+	if ( ( ! $isNowEnabled ) && $isDifferent ) {
 		return removeServiceFromConfig( $config, $serviceId );
 	}
-
-	echo "Reason for $serviceId being tracked: $reason\n";
 
 	if ( $isDifferent && ( $isNowEnabled || $isPreviouslyEnabled ) ) {
 		echo "Updating/inserting $serviceId into config\n";

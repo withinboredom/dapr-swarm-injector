@@ -1,21 +1,14 @@
 version: '3'
 services:
   swarm-monitor:
-    image: withinboredom/dapr-swarm-monitor:latest
+    image: withinboredom/dapr-swarm-monitor:@git@
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: none
+    environment:
+      ALWAYS_UPDATE: 'true'
     deploy:
       placement:
         constraints:
           - "node.role==manager"
       replicas: 1
-  swarm-injector:
-    image: withinboredom/dapr-swarm-injector:latest
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    network_mode: none
-    deploy:
-      mode: global
-      labels:
-        swarm.inject: "true"
