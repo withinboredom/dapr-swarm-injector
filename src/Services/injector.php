@@ -17,9 +17,12 @@ while ( $alive ) {
 	if ( ! empty( $monitor_options->getCurrentConfigFile() ) ) {
 		\Phar::mount( '/' . $monitor_options->getCurrentConfigFile(), '/' . $monitor_options->getCurrentConfigFile() );
 		echo "Now using config: {$monitor_options->getCurrentConfigFile()}\n";
+		echo file_get_contents( $monitor_options->getCurrentConfigFile() ) . "\n";
 		break;
 	}
 }
+
+$serviceLabels = json_decode( file_get_contents( $monitor_options->getCurrentConfigFile() ), true );
 
 // check to see if we have a component image
 $componentImage = $monitor_options->getComponentImage();
@@ -59,9 +62,7 @@ $eventHandler->start();
 
 doit();
 
-$eventHandler->on( type: 'container', action: 'start', scope: 'local', do: fn() => doit() );
-$eventHandler->on( type: 'container', action: 'stop', scope: 'local', do: fn() => doit() );
-$eventHandler->on( type: 'container', action: 'remove', scope: 'local', do: fn() => doit() );
+$eventHandler->on( type: 'container', scope: 'local', do: fn() => doit() );
 
 while ( $alive ) {
 	$eventHandler->update();

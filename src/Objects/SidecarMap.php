@@ -5,11 +5,11 @@ namespace Dapr\SwarmInjector\Objects;
 use Dapr\SwarmInjector\Lib\DockerClient;
 
 class SidecarMap {
+	private static array $updatedServices = [];
 	/**
 	 * @var Sidecar[]
 	 */
 	public array $sidecars = [];
-
 	/**
 	 * @var TrackedContainer[]
 	 */
@@ -26,23 +26,20 @@ class SidecarMap {
 			$container->updateServiceLabels( $serviceLabels[ $container->getService() ] ?? null );
 			if ( $container->getLabel( $monitor_options->getLabelPrefix() . '/enabled' ) === 'true' ) {
 				$this->containers[ $container->getId() ] = new TrackedContainer( $container );
-			}
-			if ( $container->getLabel( 'swarm.injector/type' ) === 'sidecar:' . $monitor_options->getLabelPrefix() ) {
-				if ( ( $target = $container->getNetworkTargetContainer() ) === null ) {
-					throw new \LogicException( 'Injected sidecar without a target container!' );
-				}
+			} else if ( $container->getLabel( 'swarm.injector/type' ) === 'sidecar:' . $monitor_options->getLabelPrefix() ) {
+				$target = $container->getNetworkTargetContainer();
 				if ( ( $this->sidecars[ $target ] ?? null ) !== null ) {
 					throw new \RuntimeException( 'There is already is more than one injected sidecar!' );
 				}
 				$this->sidecars[ $target ] = new Sidecar( $container );
+			} else {
+				echo "Not considering {$container->getId()} due to missing {$monitor_options->getLabelPrefix()}/enabled label\n";
 			}
 		}
 		foreach ( $this->containers as $container ) {
 			$container->addExistingSidecar( $this->sidecars[ $container->container->getId() ] ?? null );
 		}
 	}
-
-	private static array $updatedServices = [];
 
 	public function reconcileSidecars( DockerClient $dockerClient ): void {
 		foreach ( $this->containers as $containerId => $container ) {
@@ -59,6 +56,8 @@ class SidecarMap {
 					echo 'Failed to start container for ' . $container->container->getId() . "!\n";
 					continue;
 				}
+			} else {
+				echo "Skipping container $containerId because it already has a sidecar\n";
 			}
 		}
 		foreach ( $this->sidecars as $containerId => $sidecar ) {

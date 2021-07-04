@@ -20,18 +20,6 @@ class Sidecar {
 		return array_filter( $needsSidecar->container->getLabels(), fn( $key ) => str_starts_with( $key, $monitor_options->getLabelPrefix() ), ARRAY_FILTER_USE_KEY );
 	}
 
-	public function needsUpdate( TrackedContainer $target ): bool {
-		global $monitor_options;
-		$labels  = $this->getAllLabels( $target );
-		$request = $this->getContainerRequestFromTemplate( $labels, $target );
-
-		$current = $this->container->container;
-
-		return ! ( $request['Image'] === $current['Image']
-		           && ( $request['Env'] ?? [] ) === ( $current['Env'] ?? [] )
-		           && implode( ' ', $request['Cmd'] ) === $current['Command'] );
-	}
-
 	private function getContainerRequestFromTemplate( array $labels, TrackedContainer $container ): array {
 		global $monitor_options;
 
@@ -46,7 +34,10 @@ class Sidecar {
 
 		$container = [
 			'Image'      => $monitor_options->getInjectImageName(),
-			'Env'        => array_filter( $render( $getAllOfType( 'env' ) ) ),
+			'Env'        => array_merge( array_filter( $render( $getAllOfType( 'env' ) ) ), [
+				'DAPR_PORT=50002',
+				'DAPR_METRICS_PORT=9090'
+			] ),
 			'Cmd'        => array_merge( [ $monitor_options->getCommandPrefix() ], array_merge( ...array_filter( $render( $getAllOfType( 'param' ) ), fn( $c ) => ! empty( $c[1] ) ) ) ),
 			'HostConfig' => [
 				'CpuShares'         => (int) $render( $getAllOfType( 'CPU.Request' ) )[0] ?? 0,
@@ -73,73 +64,6 @@ class Sidecar {
 		return $container;
 	}
 
-	private function renderValues( array $configs, array $labels, TrackedContainer $container ): mixed {
-		global $monitor_options;
-		$values = [];
-		foreach ( $configs as $config ) {
-			if ( $config['kind'] === 'constant' ) {
-				if ( str_starts_with( $config['value'], 'ENV:' ) ) {
-					$config['value'] = $monitor_options->getEnv( explode( ':', 2 )[1], $config['default'] ?? null );
-				}
-				$values[] = [ $config['as'], $config['value'] ];
-			}
-			if ( $config['kind'] === 'label' ) {
-				$expectedLabel = $monitor_options->getLabelPrefix() . '/' . $config['name'];
-				$value         = $labels[ $expectedLabel ] ??
-				                 ( $config['required'] && empty( $config['default'] )
-					                 ? throw new \InvalidArgumentException( "Expected a label with $expectedLabel name, but there isn't one." )
-					                 : $config['default'] );
-				if ( $config['is_bool'] ?? false ) {
-					$value = $value == 'true' ? $config['as'] : null;
-				} else {
-					$value = match ( $config['type'] ) {
-						'env', 'RestartPolicy' => $value,
-						'param' => [ $config['as'], $value ],
-						'CPU.Request' => str_ends_with( $value, 'm' ) ? (int) ( intval( $value ) / 1000 * 1024 ) : $value * 1024,
-						'CPU.Limit' => str_ends_with( $value, 'm' ) ? intval( $value ) * 100 : $value * 100000,
-						'Memory.Request', 'Memory.Limit' => str_ends_with( $value, 'Mi' ) ? intval( $value ) * 1048576 : $value,
-						default => $value
-					};
-				}
-				foreach ( [ '%SERVICE_NAME%' => $container->container->getService() ?? $container->container->getId() ] as $placeholder => $replacement ) {
-					$value = str_replace( $placeholder, $replacement, $value );
-				}
-
-				$values[] = $value;
-			}
-		}
-
-		return $values;
-	}
-
-	private function validateLabelMap( array $labelMap ): bool {
-		$valid = true;
-		foreach ( $labelMap['labels'] as $label => $config ) {
-			if ( ! isset( $config['type'] ) ) {
-				echo "Missing configuration `type` on Label: `$label`\n";
-				$valid = false;
-			}
-		}
-
-		return $valid;
-	}
-
-	private function normalizeLabelMap( array $labelMap ): array {
-		foreach ( $labelMap['labels'] as $label => &$config ) {
-			$config['required'] ??= true;
-			$config['default']  ??= null;
-			$config['as']       ??= "-$label";
-			$config['name']     = $label;
-			$config['kind']     = 'label';
-		}
-		foreach ( $labelMap['constants'] as $constant => &$config ) {
-			$config['as']   ??= "-$constant";
-			$config['kind'] = 'constant';
-		}
-
-		return array_merge( $labelMap['labels'], $labelMap['constants'] );
-	}
-
 	public function getLabelMap() {
 		global $monitor_options;
 
@@ -153,7 +77,7 @@ class Sidecar {
 
 		return [
 			'labels'    => [
-				'app-port'               => [ 'type' => 'param', ],
+				'app-port'               => [ 'type' => 'param', 'required' => false ],
 				'config'                 => [ 'type' => 'param', 'required' => false ],
 				'app-protocol'           => [ 'default' => 'http', 'type' => 'param' ],
 				'app-id'                 => [ 'default' => '%SERVICE_NAME%', 'type' => 'param' ],
@@ -187,14 +111,93 @@ class Sidecar {
 				'dapr-http-port'          => [ 'type' => 'param', 'value' => '3500' ],
 				'dapr-grpc-port'          => [ 'type' => 'param', 'value' => '50001' ],
 				'dapr-internal-grpc-port' => [ 'type' => 'param', 'value' => '50002' ],
-				'placement-host-address'  => [ 'type' => 'param', 'value' => 'placement:50005' ],
+				'placement-host-address'  => [ 'type' => 'param', 'value' => 'placement:50006' ],
 				'restart'                 => [ 'type' => 'RestartPolicy', 'value' => 'unless-stopped' ],
 				'components-path'         => [
 					'type'    => 'param',
 					'value'   => 'ENV:COMPONENTS_PATH',
 					'default' => '/components'
-				]
+				],
 			]
 		];
+	}
+
+	private function validateLabelMap( array $labelMap ): bool {
+		$valid = true;
+		foreach ( $labelMap['labels'] as $label => $config ) {
+			if ( ! isset( $config['type'] ) ) {
+				echo "Missing configuration `type` on Label: `$label`\n";
+				$valid = false;
+			}
+		}
+
+		return $valid;
+	}
+
+	private function normalizeLabelMap( array $labelMap ): array {
+		foreach ( $labelMap['labels'] as $label => &$config ) {
+			$config['required'] ??= true;
+			$config['default']  ??= null;
+			$config['as']       ??= "-$label";
+			$config['name']     = $label;
+			$config['kind']     = 'label';
+		}
+		foreach ( $labelMap['constants'] as $constant => &$config ) {
+			$config['as']   ??= "-$constant";
+			$config['kind'] = 'constant';
+		}
+
+		return array_merge( $labelMap['labels'], $labelMap['constants'] );
+	}
+
+	private function renderValues( array $configs, array $labels, TrackedContainer $container ): mixed {
+		global $monitor_options;
+		$values = [];
+		foreach ( $configs as $config ) {
+			if ( $config['kind'] === 'constant' ) {
+				if ( str_starts_with( $config['value'], 'ENV:' ) ) {
+					$config['value'] = $monitor_options->getEnv( explode( ':', $config['value'], 2 )[1], $config['default'] ?? null );
+				}
+				$values[] = [ $config['as'], $config['value'] ];
+			}
+			if ( $config['kind'] === 'label' ) {
+				$expectedLabel = $monitor_options->getLabelPrefix() . '/' . $config['name'];
+				$value         = $labels[ $expectedLabel ] ??
+				                 ( $config['required'] && empty( $config['default'] )
+					                 ? throw new \InvalidArgumentException( "Expected a label with $expectedLabel name, but there isn't one." )
+					                 : $config['default'] );
+				if ( $config['is_bool'] ?? false ) {
+					$value = $value == 'true' ? $config['as'] : null;
+				} else {
+					$value = match ( $config['type'] ) {
+						'env', 'RestartPolicy' => $value,
+						'param' => [ $config['as'], $value ],
+						'CPU.Request' => str_ends_with( $value, 'm' ) ? (int) ( intval( $value ) / 1000 * 1024 ) : $value * 1024,
+						'CPU.Limit' => str_ends_with( $value, 'm' ) ? intval( $value ) * 100 : $value * 100000,
+						'Memory.Request', 'Memory.Limit' => str_ends_with( $value, 'Mi' ) ? intval( $value ) * 1048576 : $value,
+						default => $value
+					};
+				}
+				foreach ( [ '%SERVICE_NAME%' => $container->container->getService() ?? $container->container->getId() ] as $placeholder => $replacement ) {
+					$value = str_replace( $placeholder, $replacement, $value );
+				}
+
+				$values[] = $value;
+			}
+		}
+
+		return $values;
+	}
+
+	public function needsUpdate( TrackedContainer $target ): bool {
+		global $monitor_options;
+		$labels  = $this->getAllLabels( $target );
+		$request = $this->getContainerRequestFromTemplate( $labels, $target );
+
+		$current = $this->container->container;
+
+		return ! ( $request['Image'] === $current['Image']
+		           && ( $request['Env'] ?? [] ) === ( $current['Env'] ?? [] )
+		           && implode( ' ', $request['Cmd'] ) === $current['Command'] );
 	}
 }

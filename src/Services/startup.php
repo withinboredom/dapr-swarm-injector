@@ -24,6 +24,7 @@ $monitor_options = new Options();
 
 $client_options = [
 	'remote_socket' => $monitor_options->getRemote(),
+	'timeout' => 500 * 1000,
 ];
 
 if ( ( $tls = $monitor_options->getTLS() ) !== 'false' ) {
@@ -42,3 +43,7 @@ global $eventHandler;
 $client       = new Client( $client_options );
 $dockerClient = new DockerClient( $client );
 $eventHandler = new EventHandler( $client_options );
+
+if ( $auth = $monitor_options->getAuth() ) {
+	$dockerClient->authenticate($monitor_options->getAuth());
+}

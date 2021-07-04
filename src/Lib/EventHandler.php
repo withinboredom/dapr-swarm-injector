@@ -50,6 +50,7 @@ class EventHandler extends Client {
 			$line = trim( $line );
 			if ( str_starts_with( $line, '{' ) ) {
 				$event      = json_decode( $line, true );
+				echo "$line\n";
 				$predicates = $this->getAllPredicates( $event['Type'] ?? false, $event['Action'] ?? false, $event['scope'] ?? false );
 				foreach ( $predicates as $predicate ) {
 					$predicate   = implode( '|', $predicate );

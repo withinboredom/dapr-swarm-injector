@@ -11,12 +11,10 @@ use Http\Client\Common\Exception\ServerErrorException;
 use Http\Client\Socket\Client;
 use Http\Client\Socket\Exception\InvalidRequestException;
 
-function makeObject( &$part ) {
+function makeObject( &$part ): void {
 	if ( empty( $part ) ) {
-		return (object) $part;
+		$part = (object) $part;
 	}
-
-	return $part;
 }
 
 /**
@@ -30,18 +28,9 @@ class DockerClient {
 	use UriBuilderTrait;
 
 	public const API_VERSION = 'v1.41';
+	private string|null $authToken;
 
 	public function __construct( private Client $client ) {
-	}
-
-	private function getFilters( array $filters ): array {
-		if ( empty( $filters ) ) {
-			return [];
-		}
-
-		return [
-			'filters' => json_encode( $filters, JSON_UNESCAPED_SLASHES ),
-		];
 	}
 
 	/**
@@ -64,6 +53,27 @@ class DockerClient {
 		};
 	}
 
+	private function getFilters( array $filters ): array {
+		if ( empty( $filters ) ) {
+			return [];
+		}
+
+		return [
+			'filters' => json_encode( $filters, JSON_UNESCAPED_SLASHES ),
+		];
+	}
+
+	private function parseResponse( string $response ): array {
+		$response = explode( "\r\n", $response );
+		foreach ( $response as $line ) {
+			if ( str_starts_with( $line, '[' ) || str_starts_with( $line, '{' ) ) {
+				return json_decode( $line, associative: true, flags: JSON_THROW_ON_ERROR );
+			}
+		}
+
+		return [];
+	}
+
 	public function getService( string $id ): Service {
 		if ( empty( $id ) ) {
 			throw new \LogicException( 'Tried to get details for an empty service' );
@@ -81,6 +91,7 @@ class DockerClient {
 
 	public function updateService( Service $serviceToUpdate ): bool {
 		$body = $serviceToUpdate->getJson();
+		var_dump( $body );
 		echo "Updating service {$serviceToUpdate->id} with version {$serviceToUpdate->version}\n";
 		$request  = new Request( 'POST', $this->createUri( "/services/{$serviceToUpdate->id}/update", [ 'version' => $serviceToUpdate->version ] ), headers: [ 'Content-Length' => strlen( $body ) ], body: $body );
 		$response = $this->client->sendRequest( $request );
@@ -99,17 +110,6 @@ class DockerClient {
 			400 => throw new InvalidRequestException( $responseBody, $request ),
 			200 => true,
 		};
-	}
-
-	private function parseResponse( string $response ): array {
-		$response = explode( "\r\n", $response );
-		foreach ( $response as $line ) {
-			if ( str_starts_with( $line, '[' ) || str_starts_with( $line, '{' ) ) {
-				return json_decode( $line, associative: true, flags: JSON_THROW_ON_ERROR );
-			}
-		}
-
-		return [];
 	}
 
 	public function getLastConfig( string $label ): Config {
@@ -166,7 +166,16 @@ class DockerClient {
 		};
 	}
 
-	public function createContainer( array $container, string $name ): string {
+	public function createContainer( array $container, string $name, bool $pull = true ): string {
+		if ( $pull ) {
+			echo "Pulling image {$container['Image']}\n";
+			if ( $this->pullImage( $container['Image'] ) ) {
+				echo "Finished pulling image\n";
+			} else {
+				echo "Failed pulling image\n";
+			}
+		}
+
 		$body         = json_encode( $container, JSON_UNESCAPED_SLASHES );
 		$request      = new Request( 'POST', $this->createUri( '/containers/create', [ 'name' => $name ] ), headers: [
 			'Content-Type'   => 'application/json',
@@ -176,12 +185,39 @@ class DockerClient {
 		$responseBody = $response->getBody()->getContents();
 
 		return match ( $response->getStatusCode() ) {
-			500 => throw new ServerErrorException( $response->getBody()->getContents(), $request, $response ),
-			409 => throw new \InvalidArgumentException( $response->getBody()->getContents() ),
-			404 => throw new \RuntimeException( $response->getBody()->getContents() ),
-			400 => throw new \InvalidArgumentException( $response->getBody()->getContents() ),
+			500 => throw new ServerErrorException( $responseBody, $request, $response ),
+			409 => throw new \InvalidArgumentException( $responseBody ),
+			404 => print( $responseBody ) == 0 || throw new \RuntimeException( $responseBody ),
+			400 => throw new \InvalidArgumentException( $responseBody ),
 			201 => json_decode( $responseBody, true )['Id']
 		};
+	}
+
+	public function pullImage( string $image ): bool {
+		$request  = new Request( 'POST', $this->createUri( '/images/create', [ 'fromImage' => $image ] ), headers: $this->maybeAddAuthHeader() );
+		$response = $this->client->sendRequest( $request );
+
+		// we have to read the response body!
+		$responseBody = $response->getBody()->getContents();
+		echo "$responseBody\n";
+
+		return match ( $response->getStatusCode() ) {
+			200 => true,
+			default => ( print "Failed to pull $image from repository\n" == 0 ),
+		};
+	}
+
+	private function maybeAddAuthHeader( array $headers = [] ): array {
+		if ( isset( $this->authToken ) ) {
+			$headers['X-Registry-Auth'] = base64_encode( $this->authToken );
+		}
+
+		return $headers;
+	}
+
+	public function authenticate( string $json_auth ): void {
+		echo "Authenticating with secret\n";
+		$this->authToken = $json_auth;
 	}
 
 	public function startContainer( string $id ): bool {

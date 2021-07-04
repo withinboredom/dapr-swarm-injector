@@ -62,14 +62,15 @@ class Service {
 	}
 
 	public function getJson(): string {
-		makeObject( $this->service['TaskTemplate']['Placement'] );
-		makeObject( $this->service['Mode']['Global'] );
-		makeObject( $this->service['TaskTemplate']['ContainerSpec']['DNSConfig'] );
-		makeObject( $this->service['TaskTemplate']['Resources']['Limits'] );
-		makeObject( $this->service['TaskTemplate']['Resources']['Reservations'] );
-		makeObject( $this->service['TaskTemplate']['Resources'] );
+		$service = $this->service;
+		makeObject( $service['TaskTemplate']['Placement'] );
+		makeObject( $service['Mode']['Global'] );
+		makeObject( $service['TaskTemplate']['ContainerSpec']['DNSConfig'] );
+		makeObject( $service['TaskTemplate']['Resources']['Limits'] );
+		makeObject( $service['TaskTemplate']['Resources']['Reservations'] );
+		makeObject( $service['TaskTemplate']['Resources'] );
 
-		return json_encode( $this->service, JSON_UNESCAPED_SLASHES );
+		return json_encode( $service, JSON_UNESCAPED_SLASHES );
 	}
 
 	public function getImage(): string {

@@ -3,6 +3,10 @@
 namespace Dapr\SwarmInjector\Lib;
 
 class Options {
+	public function getRemote(): string {
+		return $this->getEnv( 'DOCKER_HOST', 'unix:///var/run/docker.sock' );
+	}
+
 	public function getEnv( string $key, string|null $default = null ): string|null {
 		$env = getenv( $key );
 		if ( $env === false ) {
@@ -15,10 +19,6 @@ class Options {
 		}
 
 		return $env;
-	}
-
-	public function getRemote(): string {
-		return $this->getEnv( 'DOCKER_HOST', 'unix:///var/run/docker.sock' );
 	}
 
 	public function getTLS(): string {
@@ -59,5 +59,9 @@ class Options {
 
 	public function getComponentPath(): string|null {
 		return $this->getEnv( 'COMPONENT_PATH', '/components' );
+	}
+
+	public function getAuth(): string|null {
+		return $this->getEnv( 'DOCKER_AUTH', null );
 	}
 }

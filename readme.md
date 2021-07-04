@@ -81,13 +81,31 @@ docker service create \
     --mode global \
     --label swarm.inject=true \
     --name swarm-injector \
-    docker.io/withinboredom/dapr-swarm-injector:v0.3.0
+    --with-registry-auth \
+    withinboredom/dapr-swarm-injector:dev
 ```
 
 From there, we can constrain it so it doesn't take too much memory/cpu:
 
 ```
 docker service update swarm-injector --limit-cpu 0.1 --limit-memory 128M
+```
+
+### Add Authentication
+
+It's extremely likely you'll run into the Docker Hub pull limits, so you need to make sure you have authenticated
+credentials to pull the required images.
+
+1. Create the credentials as a secret:
+
+```
+echo '{"username":"withinboredom","password":"password","serveraddress":"https://index.docker.io/v1/"}' | docker secret create docker-auth- -
+```
+
+2. Add it to the service
+
+```
+docker service update swarm-injector --secret-add docker-auth --env-add DOCKER_AUTH=docker-auth
 ```
 
 ## Deploy the Monitor
@@ -98,22 +116,93 @@ docker service create \
     --mode replicated \
     --constraint "node.role==manager" \
     --replicas 1 \
+    --with-registry-auth \
     --env INJECT_IMAGE=daprio/daprd:1.2.2 \
+    --env INJECTOR_IMAGE=withinboredom/dapr-swarm-injector:dev \
     --name swarm-monitor \
-    docker.io/withinboredom/dapr-swarm-monitor:v0.2.0-4392f13
+    --secret docker-auth-2 \
+    --env DOCKER_AUTH=docker-auth-2 \
+    withinboredom/dapr-swarm-monitor:dev
 ```
 
-We can also contrain the CPU and memory:
+We can also constrain the CPU and memory:
 
 ```
 docker service update swarm-monitor --limit-cpu 0.1 --limit-memory 128M
 ```
 
-## Adding components
+## Configuring daprd...
 
-Now lets build a simple component (note that components do not support secrets at the moment):
+Now we need to configure daprd components, save this in a file:
 
-Create a network to use: `docker network create --internal dapr`
+```yaml
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: appconfig
+spec:
+  nameResolution:
+    component: "dns"
+```
+
+Now build an image using config file [see example](example/Dockerfile) and configure the monitor to use that image:
+
+```
+docker build -t withinboredom/dapr-example:1.2.2 example/
+docker push withinboredom/dapr-example:1.2.2
+docker service --env-add INJECT_IMAGE=withinboredom/dapr-example:1.2.2 swarm-monitor --env-add ALWAYS_UPDATE=true
+```
+
+Using the `ALWAYS_UPDATE` flag will force it to update the injector with the new configuration, we can set it to false
+afterwards.
+
+TODO: Create configuration volume
+
+## Deploying a Dapr Service
+
+Now we can deploy a simple service to Dapr. To do that, we'll deploy a simple overlay network for communication.
+
+```
+docker network create --driver overlay --attachable dapr
+```
+
+Deploy the placement service for actor support: 
+
+```
+docker service create --name placement --with-registry-auth --network dapr --replicas 1 daprio/dapr:1.2.2 ./placement -port 50006
+```
+
+A fake service:
+
+```
+docker service create \
+   --label dapr.io/enabled=true \
+   --label dapr.io/config=/dapr-config.yml \
+   --label dapr.io/app-id=whoami \
+   --label dapr.io/app-port=80 \
+   --replicas 5 \
+   --network dapr \
+   --network consul \
+   --name whoami \
+   --with-registry-auth \
+   traefik/whoami:latest
+```
+
+We can verify that it works by creating a one-off container on one of the nodes:
+
+```
+container=$(docker create -it --rm \
+   --network consul \
+   --label dapr.io/enabled=true \
+   --label dapr.io/app-id=console \
+   --label dapr.io/config=/dapr-config.yml \
+   ubuntu:latest bash)
+docker network connect dapr $container
+docker start $container
+docker exec -it $container bash
+# apt update && apt install -y curl
+# curl localhost:3500/v1.0/invoke/whoami/method/test
+```
 
 ## Advanced: Changing Injector Behavior
 

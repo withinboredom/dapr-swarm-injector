@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM php:8-cli AS base
+FROM php:8-cli AS base
 RUN apt-get update && apt-get install -y wget gpg git unzip && apt-get clean && rm -rf /var/cache/apt/lists
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
@@ -17,7 +17,7 @@ COPY composer.json composer.json
 COPY composer.lock composer.lock
 RUN composer install
 COPY . .
-RUN make -j phar
+RUN --mount=type=secret,id=.env make -j phar
 
 FROM base AS runtime
 RUN install-php-extensions curl zip sodium pcntl

@@ -19,6 +19,7 @@ class Container {
 	}
 
 	public function getLabel( string $key ): string|null {
+		var_dump($this->getLabels());
 		return $this->getLabels()[ $key ] ?? null;
 	}
 
